@@ -69,6 +69,7 @@ def build_preprocessor(n_bins: int = 5) -> ColumnTransformer:
         ("impute", SimpleImputer(strategy="median")),
         ("disc", KBinsDiscretizer(
             n_bins=n_bins, encode="onehot", strategy="quantile",
+            quantile_method="linear",
         )),
     ])
     categorical = Pipeline([

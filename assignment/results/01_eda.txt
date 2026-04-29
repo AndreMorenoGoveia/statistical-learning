@@ -1,0 +1,53 @@
+train shape: (32561, 15)
+test shape:  (16281, 15)
+
+== dtypes ==
+age               int64
+workclass           str
+fnlwgt            int64
+education           str
+education-num     int64
+marital-status      str
+occupation          str
+relationship        str
+race                str
+sex                 str
+capital-gain      int64
+capital-loss      int64
+hours-per-week    int64
+native-country      str
+income            int64
+
+== class balance (train) ==
+income
+<=50K    0.75919
+>50K     0.24081
+
+== missing values per column (train) ==
+occupation        1843
+workclass         1836
+native-country     583
+rows with any missing: 2399 (7.37%)
+
+== numeric summary (train) ==
+            age  capital-gain  capital-loss  hours-per-week
+count  32561.00      32561.00      32561.00        32561.00
+mean      38.58       1077.65         87.30           40.44
+std       13.64       7385.29        402.96           12.35
+min       17.00          0.00          0.00            1.00
+25%       28.00          0.00          0.00           40.00
+50%       37.00          0.00          0.00           40.00
+75%       48.00          0.00          0.00           45.00
+max       90.00      99999.00       4356.00           99.00
+
+== categorical cardinality (train) ==
+  workclass            8 unique
+  education           16 unique
+  marital-status       7 unique
+  occupation          14 unique
+  relationship         6 unique
+  race                 5 unique
+  sex                  2 unique
+  native-country      41 unique
+
+saved figures to /home/andre/repos/statistical-learning/assignment/figures

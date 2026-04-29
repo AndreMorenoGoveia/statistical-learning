@@ -1,0 +1,12 @@
+loaded best kNN params from 02_knn.py: {'n_neighbors': 21, 'weights': 'uniform'}
+kNN                  fit    0.2s  acc=0.8300  prec=0.6549  rec=0.5931  f1=0.6225
+LogisticRegression   fit    0.4s  acc=0.8385  prec=0.6922  rec=0.5694  f1=0.6248
+RandomForest         fit    9.8s  acc=0.8265  prec=0.6533  rec=0.5655  f1=0.6063
+
+== holdout comparison ==
+             model  accuracy  precision   recall       f1  fit_seconds
+               kNN  0.830047   0.654895 0.593084 0.622459          0.2
+LogisticRegression  0.838462   0.692162 0.569423 0.624822          0.4
+      RandomForest  0.826485   0.653349 0.565523 0.606272          9.8
+
+saved /home/andre/repos/statistical-learning/assignment/results/comparison.csv and /home/andre/repos/statistical-learning/assignment/results/comparison.md

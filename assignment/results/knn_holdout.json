@@ -1,0 +1,23 @@
+{
+  "best_params": {
+    "clf__n_neighbors": 21,
+    "clf__weights": "uniform"
+  },
+  "best_cv_f1": 0.6251034166618742,
+  "holdout": {
+    "accuracy": 0.8300472943922363,
+    "precision": 0.6548952052828022,
+    "recall": 0.593083723348934,
+    "f1": 0.6224587256105881
+  },
+  "confusion_matrix": [
+    [
+      11233,
+      1202
+    ],
+    [
+      1565,
+      2281
+    ]
+  ]
+}

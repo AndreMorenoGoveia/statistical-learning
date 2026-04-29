@@ -30,18 +30,20 @@ def main() -> None:
 
     pipe = Pipeline([
         ("pre", build_preprocessor(n_bins=5)),
-        ("clf", KNeighborsClassifier(n_jobs=-1)),
+        ("clf", KNeighborsClassifier()),
     ])
 
     grid = {
-        "clf__n_neighbors": [3, 5, 11, 21, 31, 41, 51],
+        "clf__n_neighbors": [5, 11, 21, 31, 51],
         "clf__weights": ["uniform", "distance"],
     }
 
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)
+    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=0)
+    # n_jobs=1: avoids forking multiple processes (each would clone the full
+    # dataset in memory), which kills WSL under its memory cap.
     gs = GridSearchCV(
         pipe, grid, cv=cv,
-        scoring="f1", n_jobs=-1, verbose=1, refit=True,
+        scoring="f1", n_jobs=1, verbose=1, refit=True,
     )
 
     t0 = time.time()

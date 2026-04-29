@@ -56,7 +56,7 @@ def main() -> None:
         print(f"WARN: {bp_path} not found, using fallback {knn_params}")
 
     models = {
-        "kNN": KNeighborsClassifier(n_jobs=-1, **knn_params),
+        "kNN": KNeighborsClassifier(**knn_params),
         "LogisticRegression": LogisticRegression(max_iter=2000, n_jobs=-1),
         "RandomForest": RandomForestClassifier(
             n_estimators=300, random_state=0, n_jobs=-1,
