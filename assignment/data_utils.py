@@ -7,7 +7,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import KBinsDiscretizer, OneHotEncoder
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent / "assignment" / "data"
 
 COLUMNS = [
     "age", "workclass", "fnlwgt", "education", "education-num",
