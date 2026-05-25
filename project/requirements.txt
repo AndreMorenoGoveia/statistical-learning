@@ -1,0 +1,14 @@
+polars
+matplotlib
+pyyaml
+uniplot
+seaborn
+plotly
+pyarrow
+h5netcdf
+xarray
+dask
+scipy
+scikit-gof
+xarray
+h5netcdf

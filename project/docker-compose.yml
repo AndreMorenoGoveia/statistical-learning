@@ -1,0 +1,16 @@
+services:
+  ai:
+    build: ./
+    tty: true
+    container_name: artificial_intelligence
+    volumes:
+      - .:/usr/src/code
+    working_dir: /usr/src/code/
+    ipc: host
+    deploy: # comment group if cpu-only
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
