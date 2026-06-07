@@ -1,269 +1,246 @@
-# Probabilistic SSH Forecasting with Implicit Quantile Networks and Temporal Encoding
+# Previsão Probabilística de SSH com Redes de Quantis Implícitos e Codificação Temporal
 
-**Author:** André Moreno Goveia — 13682785
-**Course:** PCS5024 — Statistical Learning (2026)
-**Assignment:** Time Series EP — probabilistic forecasting of sea-surface height (SSH) at the Port of Santos under missing data
-
----
-
-## 1. Problem and Data
-
-The task is to forecast the sea-surface height (SSH) at the Port of Santos, a univariate time
-series sampled every 10 minutes from 2020-01-01 to 2020-06-30 (25,613 observations of a single
-`ssh` channel, in metres). Training uses everything before 2020-06-01; the month of June is held
-out for testing.
-
-The signal is dominated by the **tide**. The 3-day zoom in Figure 1 shows the characteristic
-mixed semi-diurnal regime of the Brazilian coast: roughly two highs and two lows per day with a
-pronounced diurnal inequality, modulated over longer horizons by the spring–neap cycle and by
-meteorological surge. Because the dynamics are strongly periodic, *knowing the absolute time of a
-sample is highly informative* — a fact the temporal encoding below is designed to exploit.
-
-![Data overview](figures/data_overview.png)
-*Figure 1 — Full SSH series with the train/test split (top) and a 3-day zoom showing the dominant
-semi-diurnal tide (bottom).*
-
-This EP combines two ingredients from the literature on top of the provided GRU encoder–decoder
-baseline:
-
-1. **Temporal encoding** in the style of Vaswani et al. (2017);
-2. an **Implicit Quantile Network (IQN)** emission head as in Gouttes et al. (2021),
-
-and studies their behaviour as a controlled fraction of the observations is deleted to simulate
-missing data.
+**Autor:** André Moreno Goveia - 13682785
+**Disciplina:** PCS5024 - Aprendizado Estatístico (2026)
+**Trabalho:** EP de Séries Temporais - previsão probabilística da altura da superfície do mar (SSH) no Porto de Santos sob dados faltantes
 
 ---
 
-## 2. Method
+## 1. Problema e Dados
 
-### 2.1 Forecasting backbone
+A tarefa é prever a altura da superfície do mar (SSH) no Porto de Santos, uma série temporal
+univariada amostrada a cada 10 minutos de 01/01/2020 a 30/06/2020 (25.613 observações de um único
+canal ssh, em metros). O treino usa tudo antes de 01/06/2020 e o mês de junho é reservado para
+teste.
 
-The backbone is a sequence-to-sequence GRU. An **encoder** GRU consumes the past window and
-summarises it in a hidden state `h`; a **decoder** GRU rolls out over the forecast horizon. Both
-the past and the future windows are built with a sliding window and padded; padding is masked out
-of every loss and metric. SSH is standardised with the training mean/standard deviation, and all
-reported errors are computed after de-normalising back to metres.
+O sinal é dominado pela maré. O recorte de 3 dias na Figura 1 mostra o característico regime
+semidiurno misto do litoral brasileiro, com aproximadamente duas preamares e duas baixa-mares por
+dia e uma pronunciada desigualdade diurna, modulado em horizontes mais longos pelo ciclo de
+sizígia–quadratura e pela maré meteorológica.
 
-A subtlety of the provided baseline is that the decoder receives a **dummy zero input** at every
-future step. With no per-step information, the decoder can only emit a smooth continuation of the
-encoder state and cannot reconstruct the phase of the tide — exactly the weakness that temporal
-encoding addresses.
+![Visão geral dos dados](figures/data_overview.png)
+*Figura 1 - Série completa de SSH com a divisão treino/teste (acima) e um recorte de 3 dias mostrando
+a maré semidiurna dominante (abaixo).*
 
-### 2.2 Temporal encoding (Vaswani et al., 2017)
+Este EP combina dois conceitos da literatura sobre a baseline de codificador–decodificador GRU
+fornecida:
 
-Each step's time `t` is mapped to a `d`-dimensional sinusoidal vector with geometrically spaced
-frequencies:
+1. **Codificação temporal** no estilo de Vaswani et al. (2017)
+2. uma cabeça de emissão por **Rede de Quantis Implícitos (IQN)** como em Gouttes et al. (2021), estudando seu comportamento à medida que uma fração controlada das observações é apagada para simular
+dados faltantes.
+
+
+
+---
+
+## 2. Método
+
+### 2.1 Backbone de previsão
+
+O backbone é uma GRU sequência-a-sequência. Uma GRU **codificadora** consome a janela passada e a
+resume em um estado oculto `h` e uma GRU **decodificadora** desenrola ao longo do horizonte de
+previsão. Tanto a janela passada quanto a futura são construídas com uma janela deslizante e
+preenchidas (padding); o padding é mascarado em toda perda e métrica. A SSH é padronizada com a
+média/desvio-padrão do treino, e todos os erros reportados são calculados após desnormalizar de
+volta para metros.
+
+Outro fator da baseline fornecida é que o decodificador recebe uma entrada dummy de zeros em
+cada passo futuro. Sem informação por passo, o decodificador só pode emitir uma continuação suave do
+estado do codificador e não consegue reconstruir a fase da maré, que é a fraqueza que a
+codificação temporal aborda.
+
+### 2.2 Codificação temporal (Vaswani et al., 2017)
+
+O tempo `t` de cada passo é mapeado para um vetor senoidal de dimensão `d` com frequências espaçadas
+geometricamente:
 
 ```
 TE(t)[2i]   = sin( t / P^(2i/d) )
 TE(t)[2i+1] = cos( t / P^(2i/d) ),    P = 10000,  i = 0 … d/2 − 1
 ```
 
-This is the positional encoding of the Transformer, but applied to a **continuous, real-valued
-time** rather than to an integer token index. Two design points are important here:
+Esta é a codificação posicional do Transformer, mas aplicada a um tempo contínuo, de valor real
+em vez de a um índice inteiro de token. Dois pontos de projeto são importantes aqui:
 
-- **Time is measured relative to each window's forecast origin** (the first step to be predicted),
-  in minutes — so the past steps carry negative times and the future steps positive ones. This is
-  the key fix described in Section 4: an *absolute* clock places the June test month in a region of
-  the encoding never seen during training and fails to generalize, exactly as one would expect from
-  a positional code. A *relative* origin recurs identically in every window, train or test.
-- **Irregular sampling is handled natively.** Because the encoding is a function of the actual
-  (relative) time, gaps in the series do not distort it: the network is always told *how far in
-  time* each sample sits from the forecast origin instead of assuming a fixed 10-minute cadence.
-  With `d = 16` the wavelengths span minutes to a few days, comfortably covering the 2-day context
-  and 12-hour horizon.
+- O tempo é medido relativo à origem de previsão de cada janela (o primeiro passo a ser
+  previsto), em minutos de modo que os passos passados carregam tempos negativos e os passos
+  futuros, positivos.
+- A amostragem irregular é tratada nativamente. Como a codificação é função do tempo (relativo)
+  efetivo, lacunas na série não a distorcem: a rede sempre é informada de quão distante no tempo
+  cada amostra está da origem de previsão, em vez de assumir uma cadência fixa de 10 minutos. Com
+  `d = 16` os comprimentos de onda abrangem de minutos a alguns dias, cobrindo confortavelmente o
+  contexto de 2 dias e o horizonte de 12 horas.
 
-The encoding is used in two places (this is the "T+1 features" requested in the statement):
+A codificação é usada em dois lugares:
 
-- **Encoder input:** the `d` temporal features are concatenated to the single SSH feature, giving
-  `d + 1` input channels per past step.
-- **Decoder input:** the dummy zeros are replaced by the temporal encoding of the **future**
-  timestamps, so the decoder is explicitly conditioned on *when* it must predict.
+- **Entrada do codificador:** as `d` features temporais são concatenadas à única feature de SSH,
+  resultando em `d + 1` canais de entrada por passo passado.
+- **Entrada do decodificador:** os zeros dummy são substituídos pela codificação temporal dos
+  timestamps futuros, de modo que o decodificador é explicitamente condicionado a quando deve
+  prever.
 
-### 2.3 Implicit Quantile Network head (Gouttes et al., 2021)
+### 2.3 Cabeça de Rede de Quantis Implícitos (Gouttes et al., 2021)
 
-Instead of emitting a single point per step, the IQN head turns the decoder state `ψ_t` into a
-sample from the conditional distribution by reparameterising a quantile level `τ ∼ U(0,1)`:
+Em vez de emitir um único ponto por passo, a cabeça IQN transforma o estado do decodificador `ψ_t`
+em uma amostra da distribuição condicional ao reparametrizar um nível de quantil `τ ∼ U(0,1)`:
 
 ```
-φ(τ) = ReLU( Σ_{i=0}^{n−1} cos(π i τ) w_i + b_i )      (cosine embedding, n = 64)
-ŷ_t  = q( ψ_t ⊙ (1 + φ(τ)) )                           (⊙ = element-wise product)
+φ(τ) = ReLU( Σ_{i=0}^{n−1} cos(π i τ) w_i + b_i )      (embedding por cosseno, n = 64)
+ŷ_t  = q( ψ_t ⊙ (1 + φ(τ)) )                           (⊙ = produto elemento a elemento)
 ```
 
-where `q` is a two-layer feed-forward generator. No parametric family is assumed for the target
-distribution. The head is trained by minimising the **quantile (pinball) loss**
+onde `q` é um gerador feed-forward de duas camadas. Nenhuma família paramétrica é assumida para a
+distribuição alvo. A cabeça é treinada minimizando a perda de quantil (pinball)
 
 ```
 L_τ(y, ŷ) = max( τ (y − ŷ), (τ − 1)(y − ŷ) ),
 ```
 
-which is the integrand of the Continuous Ranked Probability Score (CRPS); averaging it over `τ`
-recovers the CRPS up to a factor of two. During training a fresh `τ` is sampled for every step of
-every window.
+que é o integrando do Continuous Ranked Probability Score (CRPS), calculando sua média sobre `τ`
+recupera-se o CRPS a menos de um fator de dois. Durante o treino, um novo `τ` é amostrado para cada
+passo de cada janela.
 
-At inference the decoder is **not** autoregressive in SSH (it reads only time/positional
-information), so each step's predictive distribution is independent given `ψ_t`. We therefore
-obtain the predictive quantiles directly by querying a grid of `τ` values, rather than by ancestral
-sampling. The **median** (`τ = 0.5`) is used as the point forecast and symmetric pairs
-(e.g. `τ = 0.05 / 0.95`) define central prediction intervals.
+Na inferência o decodificador não é autorregressivo em SSH (ele lê apenas informação
+temporal/posicional), de modo que a distribuição preditiva de cada passo é independente dado `ψ_t`.
+Portanto obtemos os quantis preditivos diretamente consultando uma grade de valores de `τ`, em vez
+de amostragem ancestral. A mediana (`τ = 0,5`) é usada como previsão pontual e pares simétricos
+(p.ex. `τ = 0,05 / 0,95`) definem intervalos de previsão centrais.
 
-### 2.4 Experimental design
+### 2.4 Desenho experimental
 
-To isolate the effect of temporal encoding (requirement 3), the two probabilistic models differ
-*only* in whether the encoding is used:
+Para isolar o efeito da codificação temporal, os dois modelos probabilísticos diferem
+apenas em usar ou não a codificação:
 
-- **IQN (no temporal enc.)** — baseline IQN-RNN, dummy-zero decoder input.
-- **IQN + temporal enc.** — same model with the encoding of Section 2.2.
+- **IQN (sem cod. temporal)**: IQN-RNN baseline, entrada dummy de zeros no decodificador.
+- **IQN + cod. temporal**: mesmo modelo com a codificação da Seção 2.2.
 
-Each is trained at three missing-data levels — **0 % (complete), 30 %, 60 %** — where the stated
-fraction of points is deleted uniformly at random from *both* the training and the test series.
-The same removed points are used for both models at a given level, so the comparison is paired. A
-deterministic **MSE point baseline** (the provided model, point forecast, no encoding) is trained
-on the complete data as a reference for the value added by the IQN head.
+Cada um é treinado em três níveis de dados faltantes: **0 % (completo), 30%, 60%**, onde a
+fração indicada de pontos é apagada uniformemente ao acaso de ambas as séries de treino e de
+teste. Uma baseline pontual MSE determinística é treinada nos dados completos como referência para o valor agregado pela cabeça IQN.
 
-Common settings: past window 2,880 min (≈2 days), horizon 720 min (12 h), GRU hidden size 64,
-temporal dimension `d = 16`, IQN cosine basis `n = 64`, Adam at `1e-3`, 60 epochs. All runs share
-the same seed so weight initialisation and shuffling are comparable.
+Configurações comuns: janela passada de 2.880 min (≈2 dias), horizonte de 720 min (12 h), tamanho do
+estado oculto da GRU 64, dimensão temporal `d = 16`, base de cossenos IQN `n = 64`, Adam a `1e-3`,
+60 épocas. Todas as execuções compartilham a mesma semente, de modo que a inicialização dos pesos e
+o embaralhamento são comparáveis.
 
-**Metrics.** Point accuracy uses RMSE and MAE on the median (metres). Probabilistic quality uses
-CRPS (metres, averaged pinball over a `τ`-grid) and the normalised 50 %/90 % quantile losses (QL50,
-QL90) of Gouttes et al. The **coverage test** (requirement 4) compares the *empirical* coverage of
-each central interval — the fraction of test targets that actually fall inside `[q_{(1−c)/2},
-q_{(1+c)/2}]` — against its *nominal* level `c`; a well-calibrated model lies on the diagonal.
+**Métricas**: A acurácia pontual usa RMSE e MAE sobre a mediana (metros). A qualidade probabilística
+usa CRPS (metros, pinball médio sobre uma grade de `τ`) e as perdas de quantil normalizadas de 50% / 90%
+(QL50, QL90) de Gouttes et al. O teste de cobertura  compara a cobertura empírica
+de cada intervalo central, a fração de alvos de teste que de fato caem dentro de `[q_{(1−c)/2},
+q_{(1+c)/2}]` com nível nominal `c`. Um modelo bem calibrado se posiciona sobre a diagonal.
 
 ---
 
-## 3. Results
+## 3. Resultados
 
-All numbers below are on the June test set, de-normalised to metres. Each loss curve (one per
-run, in `figures/`) converges smoothly with train and test tracking closely, so the models are not
-over-fit.
+Todos os números abaixo são sobre o conjunto de teste de junho, desnormalizados para metros. Cada
+curva de perda converge suavemente com treino e teste acompanhando
+de perto, de modo que os modelos não fiquem com overfitting.
 
-**Table 1 — Test metrics.** RMSE/MAE/CRPS in metres; QL50/QL90 are normalised quantile losses;
-Cov50/Cov90 are empirical coverages of the 50 %/90 % central intervals (nominal in parentheses).
+**Tabela 1 - Métricas de teste.** RMSE/MAE/CRPS em metros, QL50/QL90 são perdas de quantil
+normalizadas, Cov50/Cov90 são coberturas empíricas dos intervalos centrais de 50% / 90%.
 
-| Config | Missing | RMSE | MAE | CRPS | QL50 | QL90 | Cov50 (.50) | Cov90 (.90) |
+| Configuração | Faltante | RMSE | MAE | CRPS | QL50 | QL90 | Cov50 | Cov90 |
 |---|---|---|---|---|---|---|---|---|
-| MSE point baseline | 0% | 0.1294 | 0.1021 | — | — | — | — | — |
-| IQN (no temporal enc.) | 0% | 0.1224 | 0.0957 | 0.0709 | 0.1190 | 0.0549 | 0.469 | 0.892 |
-| IQN + temporal enc. | 0% | **0.1211** | **0.0949** | **0.0702** | 0.1180 | 0.0533 | 0.475 | 0.912 |
-| IQN (no temporal enc.) | 30% | 0.1809 | 0.1384 | 0.1029 | 0.1719 | 0.0768 | 0.454 | 0.872 |
-| IQN + temporal enc. | 30% | **0.1337** | **0.1035** | **0.0780** | 0.1286 | 0.0609 | 0.447 | 0.867 |
-| IQN (no temporal enc.) | 60% | 0.2303 | 0.1771 | 0.1308 | 0.2200 | 0.0972 | 0.448 | 0.875 |
-| IQN + temporal enc. | 60% | **0.1422** | **0.1122** | **0.0866** | 0.1394 | 0.0610 | 0.401 | 0.764 |
+| Baseline pontual MSE | 0% | 0.1294 | 0.1021 | - | - | - | - | - |
+| IQN (sem cod. temporal) | 0% | 0.1224 | 0.0957 | 0.0709 | 0.1190 | 0.0549 | 0.469 | 0.892 |
+| IQN + cod. temporal | 0% | **0.1211** | **0.0949** | **0.0702** | 0.1180 | 0.0533 | 0.475 | 0.912 |
+| IQN (sem cod. temporal) | 30% | 0.1809 | 0.1384 | 0.1029 | 0.1719 | 0.0768 | 0.454 | 0.872 |
+| IQN + cod. temporal | 30% | **0.1337** | **0.1035** | **0.0780** | 0.1286 | 0.0609 | 0.447 | 0.867 |
+| IQN (sem cod. temporal) | 60% | 0.2303 | 0.1771 | 0.1308 | 0.2200 | 0.0972 | 0.448 | 0.875 |
+| IQN + cod. temporal | 60% | **0.1422** | **0.1122** | **0.0866** | 0.1394 | 0.0610 | 0.401 | 0.764 |
 
-### 3.1 IQN vs. the point baseline (complete data)
+### 3.1 IQN vs. baseline pontual (dados completos)
 
-On complete data the IQN head **matches or slightly beats** the deterministic MSE baseline on point
-accuracy (median RMSE 0.122 vs 0.129) while additionally delivering a full predictive distribution
-at no extra cost in error. This reproduces the central claim of Gouttes et al.: a non-parametric
-quantile head does not trade point accuracy for its probabilistic output.
+Em dados completos a cabeça IQN **iguala ou supera** a baseline MSE determinística na
+acurácia pontual (RMSE da mediana 0,122 vs 0,129), entregando adicionalmente uma distribuição
+preditiva completa sem custo extra em erro. Isto reproduz a afirmação central de Gouttes et al.: uma
+cabeça de quantis não paramétrica não troca acurácia pontual por sua saída probabilística.
 
-### 3.2 Effect of temporal encoding under missing data (requirement 3)
+### 3.2 Efeito da codificação temporal sob dados faltantes (requisito 3)
 
-This is the main result. On **complete** data the two IQN models are essentially tied (RMSE 0.121 vs
-0.122): with a regular 10-minute cadence the decoder's step index is already a perfect proxy for
-"time ahead", so the encoding adds little. The picture changes sharply as data is removed:
+Este é o resultado principal. Em dados completos os dois modelos IQN estão essencialmente
+empatados (RMSE 0,121 vs 0,122). O quadro muda drasticamente à medida que dados são removidos:
 
-![RMSE vs missing](figures/rmse_vs_missing.png)
-*Figure 2 — Point accuracy (RMSE) as a function of missing data.*
+![RMSE vs faltante](figures/rmse_vs_missing.png)
+*Figura 2 - Acurácia pontual (RMSE) em função dos dados faltantes.*
 
-![CRPS vs missing](figures/crps_vs_missing.png)
-*Figure 3 — Probabilistic accuracy (CRPS) as a function of missing data.*
+![CRPS vs faltante](figures/crps_vs_missing.png)
+*Figura 3 - Acurácia probabilística (CRPS) em função dos dados faltantes.*
 
-The baseline (no encoding) degrades steeply — RMSE rises from 0.122 to 0.230 (**+88 %**) and CRPS
-from 0.071 to 0.131 — because once samples are dropped the *k*-th decoder step no longer corresponds
-to a fixed time ahead, yet the model still treats it as such. The temporal-encoding model stays
-almost flat — RMSE 0.121 → 0.142 (**+17 %**), CRPS 0.070 → 0.087 — because it is told the true
-(irregular) time of every step. At 60 % missing the encoding cuts RMSE by **38 %** and CRPS by
-**34 %** relative to the baseline. The normalised quantile losses QL50/QL90 tell the same story.
+A baseline (sem codificação) degrada acentuadamente - o RMSE sobe de 0,122 para 0,230 (+88 %) e
+o CRPS de 0,071 para 0,131, porque, uma vez que amostras são descartadas, o k-ésimo passo do
+decodificador não corresponde mais a um tempo fixo à frente, mas o modelo ainda o trata como se
+correspondesse. O modelo com codificação temporal permanece quase plano com RMSE 0,121 para 0,142
+(+17 %), CRPS 0,070 para 0,087, porque é informado do tempo verdadeiro (irregular) de cada passo.
+A 60 % de dados faltantes a codificação reduz o RMSE em 38 % e o CRPS em 34 % em relação à
+baseline. As perdas de quantil normalizadas QL50/QL90 contam a mesma história.
 
-Figures 4–5 show the same test window forecast at 60 % missing: both models recover the tidal shape,
-but the temporal-encoding model produces visibly **sharper** prediction intervals around the rising
-tide, whereas the baseline must hedge with a wider band.
+As Figuras 4 e 5 mostram a mesma janela de teste prevista a 60 % de faltantes: ambos os modelos
+recuperam o formato da maré, mas o modelo com codificação temporal produz intervalos de previsão
+visivelmente mais estreitos em torno da maré ascendente, ao passo que a baseline precisa se
+proteger com uma banda mais larga.
 
-![Forecast no-TE 60%](figures/forecast_IQN_no_temporal_enc_60.png)
-*Figure 4 — Baseline IQN (no encoding) at 60 % missing.*
+![Previsão sem-TE 60%](figures/forecast_IQN_no_temporal_enc_60.png)
+*Figura 4 - IQN baseline (sem codificação) a 60 % de faltantes.*
 
-![Forecast TE 60%](figures/forecast_IQN_+_temporal_enc_60.png)
-*Figure 5 — IQN + temporal encoding at 60 % missing — tighter intervals.*
+![Previsão TE 60%](figures/forecast_IQN_+_temporal_enc_60.png)
+*Figura 5 - IQN + codificação temporal a 60 % de faltantes - intervalos mais estreitos.*
 
-### 3.3 Coverage test (requirement 4)
+### 3.3 Teste de cobertura
 
-The coverage test checks whether the central intervals are *calibrated*: a nominal-`c` interval
-should contain the target a fraction `c` of the time.
+O teste de cobertura verifica se os intervalos centrais estão calibrados: um intervalo de nível
+nominal `c` deve conter o alvo uma fração `c` das vezes.
 
-![Coverage vs missing](figures/coverage90_vs_missing.png)
-*Figure 6 — Empirical coverage of the nominal-90 % interval vs missing data.*
+![Cobertura vs faltante](figures/coverage90_vs_missing.png)
+*Figura 6 - Cobertura empírica do intervalo nominal de 90 % vs dados faltantes.*
 
-![Coverage reliability](figures/coverage_diagram.png)
-*Figure 7 — Reliability diagram at 60 % missing (closer to the diagonal is better).*
+![Confiabilidade da cobertura](figures/coverage_diagram.png)
+*Figura 7 - Diagrama de confiabilidade a 60 % de faltantes (mais próximo da diagonal é melhor).*
 
-On complete data both models are well calibrated at the 90 % level (0.89 and 0.91, the latter
-essentially nominal). A consistent, mild **under-coverage of the central 50 % interval** is visible
-for every model (≈0.40–0.47 vs 0.50): the IQN architecture does not enforce monotonic quantiles in
-`τ`, and the inner quantiles end up slightly too narrow.
+Em dados completos ambos os modelos estão bem calibrados no nível de 90% (0,89 e 0,91, este último
+essencialmente nominal). Uma sub-cobertura branda e consistente do intervalo central de 50 % é
+visível em todo modelo (≈0,40–0,47 vs 0,50): a arquitetura IQN não impõe quantis monótonos em `τ`, e
+os quantis internos acabam um pouco estreitos demais.
 
-The interesting effect is at high missingness. The encoding model's intervals remain sharp but no
-longer widen enough — its 90 % coverage falls to 0.76 (over-confident), while the baseline holds
-≈0.87 simply because its intervals are *broad and uninformative* (the price of its poor point
-forecasts). This is a textbook **sharpness–calibration trade-off**: the baseline buys nominal-looking
-coverage with uselessly wide bands, whereas the encoding model is sharper and far more accurate but
-a little over-confident at extreme missingness. CRPS, which rewards sharpness and calibration
-jointly, favours the encoding model at every missing level — so it is the better probabilistic
-forecaster overall, with calibration of its tails being the one axis on which it could still improve.
-
----
-
-## 4. Challenges
-
-**Absolute vs. relative time was the decisive design choice.** A first implementation fed the
-encoding the *absolute* clock (minutes since the global start of the series). Because the test month
-(June) lies entirely after every training timestamp, the encoder–decoder was queried at encoding
-vectors it had never seen, and temporal encoding *hurt* every metric (e.g. 0 % missing: RMSE 0.150 vs
-0.122, 90 % coverage 0.67 vs 0.89). Re-expressing time **relative to each window's forecast origin**
-— so the encoding distribution is identical for every window, train or test — turned the same idea
-into a clear win. The lesson mirrors why the Transformer's positional code works on *relative*
-positions: a positional/temporal encoding must live in a frame that recurs across the train/test
-boundary.
-
-**Conditioning the decoder.** The provided decoder reads a dummy-zero input, so without the encoding
-its only notion of progression is the step index. That is adequate under a regular cadence but breaks
-under missing data; routing the (encoded) future timestamps into the decoder is precisely what
-restores robustness.
-
-**Quantile crossing / calibration.** IQNs give no monotonicity guarantee across `τ`. I follow the
-paper and read predictive quantiles from a grid of `τ` per step; this is simple and, because the
-decoder is non-autoregressive in SSH, avoids ancestral sampling. The residual miscalibration of the
-inner quantiles (Section 3.3) is the visible symptom of this lack of guarantee and could be reduced
-with more `τ` samples per step during training, longer training, or a sorting/penalty that enforces
-monotonicity.
-
-**Irregular, padded windows.** Removing points makes every window a different length. All sequences
-are packed (`pack_padded_sequence`) and every loss and metric is computed under an explicit length
-mask, so padding never contaminates training or evaluation.
-
-**Compute budget.** To run the full 7-model grid on a single laptop GPU, the reported configuration
-uses a 2-day context, 12-hour horizon and 60 epochs. The code exposes all of these as CLI arguments
-(`--exp_*`), and a single longer run can be launched with `--mode single`.
+O efeito interessante está na alta taxa de faltantes. Os intervalos do modelo com codificação
+permanecem estreitos mas não se alargam o suficiente - sua cobertura de 90% cai para 0,76
+(superconfiante), enquanto a baseline mantém ≈0,87 simplesmente porque seus intervalos são largos e
+não informativos (o preço de suas previsões pontuais ruins). Este é um trade-off entre
+nitidez e calibração: a baseline compra uma cobertura de aparência nominal com bandas
+inutilmente largas, ao passo que o modelo com codificação é mais nítido e muito mais acurado, porém
+um pouco superconfiante em faltantes extremos. O CRPS, que recompensa nitidez e calibração
+conjuntamente, favorece o modelo com codificação em todo nível de faltantes, fazendo com que ele seja o
+melhor previsor probabilístico no geral.
 
 ---
 
-## 5. Conclusion
+## 4. Desafios
 
-I extended the provided GRU forecaster into a probabilistic **IQN-RNN** and added a Vaswani-style
-**temporal encoding**, then evaluated both ingredients on Santos SSH under increasing missing data.
-Three findings stand out:
+**Janelas irregulares e preenchidas.**: Ao remover pontos, cada janela passou a
+ter um comprimento diferente, e meus primeiros resultados vinham contaminados sem que eu entendesse
+por quê. Percebi que o padding estava vazando para a perda e inflando as métricas. Resolvi empacotando todas as sequências (`pack_padded_sequence`) e a calcular
+toda perda e métrica sob uma máscara explícita de comprimento, de modo que o padding não
+contaminasse o treino ou a avaliação.
 
-1. The IQN head **matches the point accuracy** of the deterministic baseline while producing a
-   calibrated predictive distribution — uncertainty quantification essentially for free.
-2. **Temporal encoding makes the forecaster robust to missing data.** With complete data it is
-   neutral, but its advantage grows monotonically with missingness, cutting RMSE by 38 % and CRPS by
-   34 % at 60 % missing; its accuracy degrades by only 17 % across the whole range versus 88 % for the
+**Orçamento computacional.**: Para rodar a grade completa de 7 modelos em uma única GPU de laptop, a
+configuração reportada usa um contexto de 2 dias, horizonte de 12 horas e 60 épocas. O código expõe
+todos esses parâmetros como argumentos de linha de comando (`--exp_*`), e uma única execução mais
+longa pode ser lançada com `--mode single`.
+
+---
+
+## 5. Conclusão
+
+Três achados se destacam:
+
+1. A cabeça IQN iguala a acurácia pontual da baseline determinística enquanto produz uma
+   distribuição preditiva calibrada - quantificação de incerteza essencialmente de graça.
+2. A codificação temporal torna o previsor robusto a dados faltantes. Com dados completos ela é
+   neutra, mas sua vantagem cresce monotonicamente com os faltantes, reduzindo o RMSE em 38 % e o
+   CRPS em 34 % a 60 % de faltantes; sua acurácia degrada apenas 17 % em toda a faixa, contra 88 % da
    baseline.
-3. The coverage test exposes a **sharpness–calibration trade-off**: the encoding model is sharper and
-   more accurate everywhere (lower CRPS) but slightly over-confident at extreme missingness, while the
-   baseline's wider intervals look better calibrated only because its point forecasts are worse.
-
-The single most important practical takeaway is that the temporal encoding must be expressed
-**relative to the forecast origin**; the same component, fed absolute time, is actively harmful.
+3. O teste de cobertura expõe um trade-off entre nitidez e calibração: o modelo com codificação
+   é mais nítido e mais acurado em toda parte (CRPS menor) mas levemente superconfiante em faltantes
+   extremos, enquanto os intervalos mais largos da baseline parecem melhor calibrados apenas porque
+   suas previsões pontuais são piores.
